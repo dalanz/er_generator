@@ -1,0 +1,22 @@
+<?php
+
+/*
+* Implements hook_schema().
+*/
+function er_generator_schema() {
+    $schema['er_generator'] = array(
+        'description' => 'Contains configuration values for the entity reference generator',
+        'fields' => array(
+            'ergid' => array('type' => 'serial', 'unsigned' => TRUE, 'not null' => TRUE),
+            'er_field_id' => array('type' => 'int', 'length' => 10, 'not null' => TRUE),
+            'er_show_field' => array('type' => 'int', 'length' => 1, 'not null' => TRUE),
+            'er_field_name' => array('type' => 'varchar', 'length' => 32, 'not null' => TRUE),
+            'er_bundle' => array('type' => 'varchar', 'length' => 255, 'not null' => TRUE),
+            'er_targetbundle' => array('type' => 'varchar', 'length' => 255, 'not null' => TRUE),
+            'er_vocabulary' => array('type' => 'varchar', 'length' => 255, 'not null' => TRUE),
+        ),
+        'primary key' => array('ergid')
+    );
+
+    return $schema;
+}

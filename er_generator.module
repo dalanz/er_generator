@@ -1,0 +1,310 @@
+<?php
+
+/*
+ * TODO:
+ * - Add i18n support
+ * */
+
+/**
+ * Implements hook_menu().
+ */
+function er_generator_menu() {
+  $items['admin/structure/er_generator/%/delete'] = array(
+    'title' => 'Delete Entity reference generator configuration',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('er_generator_delete', 3),
+    'access arguments' => array('administer entity reference generator'),
+    'type' => MENU_CALLBACK,
+  );
+  $items['admin/structure/er_generator/%/configure'] = array(
+    'title' => 'Configure Entity Reference Generator',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('er_generator_configure_form'),
+    'access arguments' => array('administer entity reference generator'),
+    'type' => MENU_NORMAL_ITEM
+  );
+  $items['admin/structure/er_generator'] = array(
+    'title' => 'Entity Reference Generator',
+    'description' => t('Create entity references.'),
+    'page callback' => 'er_generator_list',
+    'access arguments' => array('administer entity reference generator'),
+    'type' => MENU_NORMAL_ITEM
+  );
+  return $items;
+}
+
+
+function er_generator_configure_form() {
+
+  $field_id = arg(3);
+  $config = db_query("SELECT * FROM {er_generator} WHERE er_field_id = :fid", array(':fid' => $field_id))->fetchAssoc();
+
+  $field = field_info_field_by_id($field_id);
+
+  $form['info'] = array(
+    '#markup' => 'Field name: ' . $field['field_name'],
+  );
+
+  $form['field_id'] = array(
+    '#type' => 'hidden',
+    '#value' => $field['id'],
+  );
+
+  $form['field_name'] = array(
+    '#type' => 'hidden',
+    '#value' => $field['field_name'],
+  );
+
+  $form['field_parent_bundle'] = array(
+    '#type' => 'hidden',
+    '#value' => $field['bundles']['node'][0],
+  );
+
+  $vocabs = array();
+  foreach (taxonomy_vocabulary_get_names() as $key => $value) {
+    $vocabs[$key] = $value->name;
+  }
+
+  $contenttypes = array();
+  foreach (node_type_get_types() as $key => $value) {
+    $contenttypes[$key] = $value->name;
+  }
+
+  $form['vocabulary'] = array(
+    '#type' => 'select',
+    '#title' => 'Rows: Vocabulary',
+    '#description' => 'Choose the vocabular which should be used as "Rows"',
+    '#options' => $vocabs,
+    '#default_value' => $config['er_vocabulary'],
+  );
+
+  $form['target_bundle'] = array(
+    '#type' => 'select',
+    '#title' => 'Columns: Content type',
+    '#description' => 'Choose the content type which should be referenced and holds the "Columns"',
+    '#options' => $contenttypes,
+    '#default_value' => $config['er_targetbundle'],
+  );
+
+  $form['show_field'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Display the entity reference field on the form "Create new" form.'),
+    '#default_value' => $config['er_show_field'],
+  );
+
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => 'Save',
+  );
+
+  return $form;
+}
+
+function er_generator_configure_form_submit($form, &$form_state) {
+
+  $config = db_query("SELECT * FROM {er_generator} WHERE er_field_id = :fid", array(':fid' => $form_state['values']['field_id']))->fetchAssoc();
+
+  if (!empty($config)) {
+    db_update('er_generator')
+      ->fields(
+        array(
+          'er_vocabulary' => $form_state['values']['vocabulary'],
+          'er_targetbundle' => $form_state['values']['target_bundle'],
+          'er_show_field' => $form_state['values']['show_field'],
+        )
+      )
+      ->condition('er_field_id', arg(3), '=')
+      ->execute();
+
+  }
+  else {
+    db_insert('er_generator')
+      ->fields(array(
+        'er_field_id',
+        'er_field_name',
+        'er_vocabulary',
+        'er_targetbundle',
+        'er_bundle',
+        'er_show_field'
+      ))
+      ->values(array(
+          'er_field_id' => $form_state['values']['field_id'],
+          'er_field_name' => $form_state['values']['field_name'],
+          'er_vocabulary' => $form_state['values']['vocabulary'],
+          'er_targetbundle' => $form_state['values']['target_bundle'],
+          'er_bundle' => $form_state['values']['field_parent_bundle'],
+          'er_show_field' => $form_state['values']['show_field'],
+        )
+      )->execute();
+  }
+  $form_state['redirect'] = 'admin/structure/er_generator';
+}
+
+function er_generator_delete($form, &$form_state, $the_fid) {
+  $form = array();
+  $form['the_fid'] = array(
+    '#type' => 'value',
+    '#value' => $the_fid,
+  );
+
+  return confirm_form(
+    $form,
+    t('Are you sure you want to delete the configuration for this field?'),
+    'admin/structure/er_generator',
+    t('This action cannot be undone.'),
+    t('Delete'),
+    t('Cancel')
+  );
+}
+
+
+/**
+ * submit handler for the example_delete
+ * this function is invoked only when the user clicks confirm button
+ * clickin on cancel, the user goes back to the $path
+ */
+function er_generator_delete_submit($form, &$form_state) {
+
+  $fid = (int) $form_state['build_info']['args'][0];
+  db_delete('er_generator')
+    ->condition('er_field_id', $fid)
+    ->execute();
+
+  drupal_set_message('The configurtion has been deleted successfully.');
+  $form_state['redirect'] = 'admin/structure/er_generator';
+}
+
+function er_generator_list() {
+  $instances = field_info_instances();
+
+  $fields = array();
+
+  foreach ($instances as $entity_type => $type_bundles) {
+    foreach ($type_bundles as $bundle => $bundle_instances) {
+      foreach ($bundle_instances as $field_name => $instance) {
+        if ($instance['display']['default']['module'] == 'entityreference') {
+          $fields[$instance['field_id']]['field_label'] = $instance['label'];
+          $fields[$instance['field_id']]['field_name'] = $instance['field_name'];
+          $fields[$instance['field_id']]['field_parent_bundle'] = $instance['bundle'];
+        }
+      }
+    }
+  }
+
+  $rows = array();
+  $header = array(
+    t('Field ID'),
+    t('Field Label'),
+    t('Field Name'),
+    t('Parent Bundle'),
+    t('"Column"-Bundle (Vocab)'),
+    t('"Row"-Bundle (Entity)'),
+    t('Configure'),
+    t('Delete')
+  );
+
+  foreach ($fields as $fid => $field) {
+    $vocabs = db_query("SELECT * FROM {er_generator} WHERE er_field_id = :fid ORDER BY ergid DESC", array(':fid' => $fid))->fetchField(6);
+    $target = db_query("SELECT * FROM {er_generator} WHERE er_field_id = :fid ORDER BY ergid DESC", array(':fid' => $fid))->fetchField(5);
+    $rows[] = array(
+      $fid,
+      $field['field_label'],
+      $field['field_name'],
+      $field['field_parent_bundle'],
+      !empty($vocabs) ? $vocabs : t('None'),
+      !empty($target) ? $target : t('None'),
+      l(t('configure'), 'admin/structure/er_generator/' . $fid . '/configure'),
+      l(t('delete'), 'admin/structure/er_generator/' . $fid . '/delete'),
+    );
+  }
+
+
+  $table_markup = theme('table', array(
+    'header' => $header,
+    'rows' => $rows,
+    'attributes' => array('class' => array('redirects-table'))
+  ));
+
+  $form['intro'] = array(
+    '#markup' => t('<p>The table below shows the currently setup entity reference fields. Configure to enable a generator.</p>'),
+  );
+
+  $form['table'] = array(
+    '#markup' => $table_markup,
+  );
+
+  return $form;
+
+}
+
+
+/**
+ * Implements hook_entity_insert().
+ */
+function er_generator_entity_insert($entity, $type) {
+  global $user;
+  $nodewrapper = entity_metadata_wrapper('node', $entity);
+  $insertedId = $nodewrapper->getIdentifier();
+  $language = $entity->language;
+
+  $results = db_query("SELECT er_bundle FROM {er_generator} WHERE er_bundle = :type", array(':type' => $entity->type))->fetchAssoc();
+
+  if (!empty($results)) {
+    $properties = entity_get_property_info('node');
+    $fields = $properties['bundles'][$entity->type]['properties'];
+    foreach ($fields as $key => $field) {
+      $result = db_query("SELECT * FROM {er_generator} WHERE er_field_name = :field", array(':field' => $key))->fetchAssoc();
+      if (!empty($result)) {
+        $ref_nids = array();
+        $vocabulary = taxonomy_vocabulary_machine_name_load($result['er_vocabulary']);
+        foreach (taxonomy_get_tree($vocabulary->vid) as $term_key => $term) {
+          $values = array(
+            'type' => $result['er_targetbundle'],
+            'uid' => $user->uid,
+            'language' => $language,
+            'status' => 1,
+          );
+          $entity = entity_create('node', $values);
+          $ewrapper = entity_metadata_wrapper('node', $entity);
+          $ewrapper->title->set($term->name);
+          $ewrapper->save();
+
+          // Save the ID of the created criteria
+          $ref_nids[] = intval($ewrapper->getIdentifier());
+        }
+        $nodewrapper = entity_metadata_wrapper('node', entity_load_single('node', $insertedId));
+        $nodewrapper->{$key}->set($ref_nids);
+      }
+    }
+    $nodewrapper->save();
+    drupal_goto('node/'. $nodewrapper->getIdentifier() . '/edit');
+  }
+}
+
+
+/**
+ * Implements hook_field_attach_form().
+ */
+function er_generator_field_attach_form($entity_type, $entity, &$form, &$form_state, $langcode) {
+  $results = db_query("SELECT * FROM {er_generator} WHERE er_bundle = :type", array(':type' => $form['#bundle']))->fetchAll();
+  foreach ($results as $result) {
+    if (in_array($result->er_field_name, $form)) {
+      if (!$result->er_show_field && empty($form['nid']['#value'])) {
+        unset($form[$result->er_field_name]);
+        $form['actions']['submit']['#value'] = t('Save and continue');
+      }
+    }
+  }
+}
+
+/**
+ * Implements hook_permission().
+ */
+function er_generator_permission() {
+    return array(
+      'administer entity reference generator' => array(
+        'title' => t('Administer entity reference generators'),
+        'description' => t('Perform administration of entity reference generators.'),
+      ),
+    );
+}
