@@ -1,2 +1,2 @@
-# er_generator
-Drupal 7 Module: Entity Reference Generator
+# Entity Reference Generator
+A Drupal 7 module which allows you to create entities based on terms in a vocabulary and automatically reference them back to the inserted entity. An example will follow ...
